@@ -14,6 +14,7 @@
 
 	# Disable this service
 	! systemctl is-enabled dietpi-fs_partition_resize > /dev/null || systemctl disable dietpi-fs_partition_resize
+	echo "fs_partition_resize: disabled the service to prevent later restart"
 
 	# Detect root device
 	ROOT_DEV=$(findmnt -Ufnro SOURCE -M /)
@@ -38,14 +39,16 @@
 		echo "[FAILED] Unsupported root device naming scheme ($ROOT_DEV). Aborting..."
 		exit 1
 	fi
+	echo "fs_partition_resize: $ROOT_DEV is partition $ROOT_PART on drive $ROOT_DRIVE"
 
 	# check if the last partition is a 4MB partition with the Windows/FAT type
 	if sfdisk -l "$ROOT_DRIVE" | tail -1 | grep -E "\s4M\s+c\s" > /dev/null 2>&1
 	then
-		# the last partition is a 4M FAT filesystem - let's check if it is ours
+		echo "fs_partition_resize: the last partition is a 4M FAT filesystem - let's check if it is ours"
 		SETUP_PART=$(sfdisk -l "$ROOT_DRIVE" | tail -1 | mawk '{print $1}')
 		if blkid "$SETUP_PART" | grep 'LABEL="DIETPISETUP"'
 		then
+			echo "fs_partition_resize: found the DIETPISETUP LABEL - copying data"
 			# mount it and copy files
 			TEMP_MOUNT=$(mktemp -d)
 			mount "$SETUP_PART" "$TEMP_MOUNT"
@@ -54,6 +57,7 @@
 			umount "$SETUP_PART"
 			rmdir "$TEMP_MOUNT"
 			# finally delete the partition so the resizing works
+			echo "fs_partition_resize: remove part ${SETUP_PART: -1} from $ROOT_DRIVE"
 			sfdisk --no-tell --no-reread --delete "$ROOT_DRIVE" "${SETUP_PART: -1}"
 		fi
 	fi
