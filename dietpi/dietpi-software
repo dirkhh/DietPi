@@ -2658,6 +2658,26 @@ _EOF_
 			aENABLE_SERVICES+=("$@")
 		}
 
+		# check on all the install snippets in /dietpi/software/scripts
+		mkdir -p /boot/dietpi/software/scripts
+		aSNIPPETS=$(find /boot/dietpi/software/scripts -maxdepth 1 -type d -regex '.*/[0-9]+' -exec basename {} \;)
+
+		for pkg_num in "${aSNIPPETS[@]}"
+		do
+			if To_Install $pkg_num
+			then
+				# run all the scripts that haven't been run, yet
+				for script in prep hw-customize configure
+				do
+					if [ -f "/boot/dietpi/software/scripts/$pkg_num/$script.sh" ] && [ ! -f "/boot/dietpi/software/scripts/$pkg_num/$script.completed" ]
+					then
+						source "/boot/dietpi/software/scripts/$pkg_num/$script.sh"
+						touch "/boot/dietpi/software/scripts/$pkg_num/$script.completed"
+					fi
+				done
+			fi
+		done
+
 		if To_Install 5 # ALSA
 		then
 			# Get chosen sound card, use default if unset or "none"
