@@ -2633,6 +2633,16 @@ _EOF_
 		To_Install()
 		{
 			(( ${aSOFTWARE_INSTALL_STATE[$1]} == 1 )) || return 1
+			# have all dependencies already been installed?
+			# this will alert us if the simplistic linear ordering isn't sufficient
+			for dep in ${aSOFTWARE_DEPS[$1]}
+			do
+				if [[ "${aSOFTWARE_INSTALL_STATE[$dep]}" != 2 ]]
+				then
+					G_DIETPI-NOTIFY 2 "Dependency ${aSOFTWARE_NAME[$dep]} of ${aSOFTWARE_NAME[$1]} hasn't been installed, yet"
+					return 1
+				fi
+			done
 			G_DIETPI-NOTIFY 3 "$G_PROGRAM_NAME" "Installing ${aSOFTWARE_NAME[$1]}: ${aSOFTWARE_DESC[$1]}"
 			software_id=$1
 			shift
@@ -2641,25 +2651,37 @@ _EOF_
 			aENABLE_SERVICES+=("$@")
 		}
 
-		# check on all the install snippets in /dietpi/software/scripts
-		mkdir -p /boot/dietpi/software/scripts
-		aSNIPPETS=$(find /boot/dietpi/software/scripts -maxdepth 1 -type d -regex '.*/[0-9]+' -exec basename {} \;)
+		Install_Snippet()
+		{
+			[ -d "/boot/dietpi/software/$1" ] || return
+			# run all the scripts that have not been run, yet, for this snippet
+			for script in prep hw-customize configure
+			do
+				if [[ -f "/boot/dietpi/software/$1/$script.sh" ]] && [[ ! -f "/boot/dietpi/software/$1/$script.completed" ]]
+				then
+					# shellcheck disable=SC1090
+					source "/boot/dietpi/software/$1/$script.sh"
+					touch "/boot/dietpi/software/$1/$script.completed"
+				fi
+			done
+			# mark this one as installed
+			aSOFTWARE_INSTALL_STATE[$1]=2
+		}
 
-		for pkg_num in "${aSNIPPETS[@]}"
-		do
-			if To_Install $pkg_num
-			then
-				# run all the scripts that haven't been run, yet
-				for script in prep hw-customize configure
-				do
-					if [ -f "/boot/dietpi/software/scripts/$pkg_num/$script.sh" ] && [ ! -f "/boot/dietpi/software/scripts/$pkg_num/$script.completed" ]
-					then
-						source "/boot/dietpi/software/scripts/$pkg_num/$script.sh"
-						touch "/boot/dietpi/software/scripts/$pkg_num/$script.completed"
-					fi
-				done
-			fi
-		done
+		# this would be a nice way to do things, but this fails the ordering criteria - so first
+		# we need to create a different way to parse the dependency tree
+		#Install_Snippets()
+		#{
+		#	# check on all the install snippets in /boot/dietpi/software/
+		#	mkdir -p /boot/dietpi/software
+		#	for pkg_num in $(find /boot/dietpi/software -maxdepth 1 -type d -regex '.*/[0-9]+' -exec basename {} \;)
+		#	do
+		#		if To_Install "$pkg_num"
+		#		then
+		#			Install_Snippet "$pkg_num"
+		#		fi
+		#	done
+		#}
 
 		if To_Install 5 # ALSA
 		then
@@ -2735,7 +2757,7 @@ _EOF_
 
 		if To_Install 17 # Git
 		then
-			G_AGI git
+			Install_Snippet 17
 		fi
 
 		if To_Install 4 # Vifm
@@ -3028,29 +3050,7 @@ unix_socket_directories = '/run/postgresql'" > "$i/00dietpi.conf"
 
 		if To_Install 130 # Python 3
 		then
-			# Workaround for pip v23
-			>> /etc/pip.conf
-			G_CONFIG_INJECT '\[global\]' '[global]' /etc/pip.conf
-			G_CONFIG_INJECT 'break-system-packages[[:blank:]]*=' 'break-system-packages=true' /etc/pip.conf '\[global\]'
-
-			# Disable cache
-			G_CONFIG_INJECT 'no-cache-dir[[:blank:]]*=' 'no-cache-dir=true' /etc/pip.conf '\[global\]'
-
-			# ARMv6/7: Add piwheels
-			(( $G_HW_ARCH < 3 )) && G_CONFIG_INJECT 'extra-index-url[[:blank:]]*=' 'extra-index-url=https://www.piwheels.org/simple/' /etc/pip.conf '\[global\]'
-
-			# Buster => Bullseye upgrade: Remove obsolete pip constraint
-			if [[ -f '/etc/pip-constraints.txt' ]] && grep -q 'numpy' /etc/pip-constraints.txt
-			then
-				G_EXEC sed --follow-symlinks -i '/^constraint=/d' /etc/pip.conf
-				G_EXEC rm /etc/pip-constraints.txt
-			fi
-
-			# Perform pip3 install (which includes setuptools and wheel modules)
-			aDEPS=('python3-dev')
-			Download_Install 'https://bootstrap.pypa.io/get-pip.py'
-			G_EXEC_OUTPUT=1 G_EXEC python3 get-pip.py
-			G_EXEC rm get-pip.py
+			Install_Snippet 130
 		fi
 
 		if To_Install 150 # Mono: https://www.mono-project.com/download/stable/#download-lin-debian
@@ -10375,71 +10375,12 @@ _EOF_
 
 		if To_Install 162 docker # Docker
 		then
-			# APT package name
-			# - RISC-V: Use "docker.io" from Debian repo as the official Docker repo does not support RISC-V yet: https://download.docker.com/linux/debian/dists/
-			local package='docker.io'
-			if (( $G_HW_ARCH != 11 ))
-			then
-				# Detect distro
-				local distro='debian'
-				(( $G_RASPBIAN )) && distro='raspbian'
-
-				# APT key
-				local url="https://download.docker.com/linux/$distro/gpg"
-				G_CHECK_URL "$url"
-				G_EXEC eval "curl -sSfL '$url' | gpg --dearmor -o /etc/apt/trusted.gpg.d/dietpi-docker.gpg --yes"
-
-				# APT list
-				G_EXEC eval "echo 'deb https://download.docker.com/linux/$distro ${G_DISTRO_NAME/trixie/bookworm} stable' > /etc/apt/sources.list.d/docker.list"
-				G_AGUP
-
-				# APT package name
-				package='docker-ce'
-			fi
-
-			# APT package
-			# - Mask service to prevent iptables related startup failure: https://github.com/MichaIng/DietPi/issues/6013
-			G_EXEC systemctl mask --now docker
-			G_AGI "$package"
-			G_EXEC systemctl unmask docker
-			G_EXEC systemctl start docker.socket
-
-			# Change Docker service type to "simple": https://github.com/MichaIng/DietPi/issues/2238#issuecomment-439474766
-			G_EXEC mkdir -p /lib/systemd/system/docker.service.d
-			G_EXEC eval "echo -e '[Service]\nType=simple' > /lib/systemd/system/docker.service.d/dietpi-simple.conf"
-
-			# Config: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-configuration-file
-			# - Move Docker containers to dietpi_userdata
-			# - Log to systemd-journald (journalctl) by default with reduced log level: https://github.com/MichaIng/DietPi/issues/2388
-			#	+ containerd: https://github.com/docker/docker.github.io/issues/9091
-			G_EXEC mkdir -p /mnt/dietpi_userdata/docker-data
-			if [[ -f '/etc/docker/daemon.json' ]]
-			then
-				GCI_PRESERVE=1 G_CONFIG_INJECT '"data-root":' '    "data-root": "/mnt/dietpi_userdata/docker-data",' /etc/docker/daemon.json '^\{([[:space:]]|$)'
-				GCI_PRESERVE=1 G_CONFIG_INJECT '"log-driver":' '    "log-driver": "journald",' /etc/docker/daemon.json '^\{([[:space:]]|$)'
-				GCI_PRESERVE=1 G_CONFIG_INJECT '"log-level":' '    "log-level": "warn",' /etc/docker/daemon.json '^\{([[:space:]]|$)'
-				GCI_PRESERVE=1 G_CONFIG_INJECT '"debug":' '    "debug": false,' /etc/docker/daemon.json '^\{([[:space:]]|$)'
-			else
-				G_EXEC mkdir -p /etc/docker
-				echo '{
-    "data-root": "/mnt/dietpi_userdata/docker-data",
-    "log-driver": "journald",
-    "log-level": "warn",
-    "debug": false
-}' > /etc/docker/daemon.json
-			fi
-			G_CONFIG_INJECT '\[debug\]' '[debug]' /etc/containerd/config.toml
-			GCI_PRESERVE=1 G_CONFIG_INJECT 'level[[:blank:]]*=' '  level = "warn"' /etc/containerd/config.toml '^\[debug\]'
-
-			Enable_memory_cgroup
-			Configure_iptables
+			Install_Snippet 162
 		fi
 
-		if To_Install 134 # Docker Compose
+		if To_Install 134 docker # Docker Compose
 		then
-			[[ -f '/usr/local/bin/docker-compose' ]] && G_EXEC rm /usr/local/bin/docker-compose # Pre-v8.14
-			command -v docker-compose > /dev/null && command -v pip3 > /dev/null && G_EXEC_OUTPUT=1 G_EXEC pip3 uninstall -y docker-compose # Pre-v8.2
-			G_AGI docker-compose-plugin
+			Install_Snippet 134
 		fi
 
 		if To_Install 161 bdd # FuguHub
@@ -11845,54 +11786,7 @@ _EOF_
 
 		if To_Install 141 adsb-setup adsb-docker # ADS-B Feeder
 		then
-			# clone the adsb-feeder repo into /tmp
-			G_EXEC_OUTPUT=1 G_EXEC git clone -b dietpi 'https://github.com/dirkhh/adsb-feeder-image.git' /tmp/adsb-feeder
-
-			# remove the service that isn't needed for an app install on DietPi and install the rest
-			G_EXEC cd /tmp/adsb-feeder/src/modules/adsb-feeder/filesystem/root
-			G_EXEC rm ./usr/lib/systemd/system/adsb-bootstrap.service
-			G_EXEC rm ./usr/lib/systemd/system/adsb-update.service
-			G_EXEC rm ./usr/lib/systemd/system/adsb-update.timer
-			G_EXEC mv ./usr/lib/systemd/system/* /etc/systemd/system/
-
-			# determine the version
-			local ADSB_FEEDER_DATE_COMPONENT=$(git log -20 --date='format:%y%m%d' --format='%ad' | uniq -c | mawk '{print $2"."$1;exit}')
-			local ADSB_FEEDER_TAG_COMPONENT=$(git describe --match 'v[0-9]*' --long | sed 's/-[0-9]*-g[0-9a-f]*//')
-			local ADSB_FEEDER_VERSION="$ADSB_FEEDER_TAG_COMPONENT(dietpi)-$ADSB_FEEDER_DATE_COMPONENT"
-
-			# create the target directory for the app and populated with the code from the git checkout
-			[[ -d '/opt/adsb' ]] && G_EXEC rm -R /opt/adsb
-			G_EXEC mv /tmp/adsb-feeder/src/modules/adsb-feeder/filesystem/root/opt/adsb /opt/
-			G_EXEC cd /opt/adsb
-
-			# remove the git clone of the repo we installed from
-			G_EXEC rm -R /tmp/adsb-feeder
-
-			# create a symlink so the config files reside where they should be in /mnt/dietpi_userdata/adsb-feeder
-			G_EXEC mkdir -p /mnt/dietpi_userdata/adsb-feeder/config
-			G_EXEC ln -s /mnt/dietpi_userdata/adsb-feeder/config .
-
-			# set the 'image name' and version that are shown in the footer of the Web UI
-			G_EXEC eval 'echo '\''ADSB Feeder app running on DietPi'\'' > feeder-image.name'
-			G_EXEC eval "echo '$ADSB_FEEDER_VERSION' > adsb.im.version"
-
-			# get the Python module
-			# for older distros we need to install via pip in order to get flask 2
-			if (( $G_DISTRO < 7 ))
-			then
-				G_EXEC_OUTPUT=1 G_EXEC pip3 install -U flask
-			else
-				G_AGI python3-flask
-			fi
-
-			# finally ensure that /run allows executables (this is needed for the containers to be able to not do excessive
-			# writes to physical storage - which might be an SD card)
-			G_EXEC mount -o remount,exec /run
-
-			# now that everything is in place, run the one time service to get the software pre-configured
-			# running this as a service allows it to do a bit of housekeeping in the background without disrupting
-			# the software install flow
-			G_EXEC systemctl start adsb-nonimage
+			Install_Snippet 141
 		fi
 
 		if To_Install 172 # WireGuard
@@ -12197,6 +12091,17 @@ If no WireGuard (auto)start is included, but you require it, please do the follo
 			(( ${aSOFTWARE_INSTALL_STATE[$1]} == -1 )) || return 1
 			G_DIETPI-NOTIFY 3 "$G_PROGRAM_NAME" "Uninstalling ${aSOFTWARE_NAME[$1]}: ${aSOFTWARE_DESC[$1]}"
 			software_id=$1
+		}
+
+		Uninstall_Snippet()
+		{
+			# run the uninstall scripts and remove the completion markers
+			if [[ -f "/boot/dietpi/software/$1/uninstall.sh" ]]
+			then
+				# shellcheck disable=SC1090
+				source "/boot/dietpi/software/$1/uninstall.sh"
+			fi
+			rm -f "/boot/dietpi/software/$1/*.completed"
 		}
 
 		if To_Uninstall 23 # LXDE
@@ -12614,12 +12519,7 @@ If no WireGuard (auto)start is included, but you require it, please do the follo
 
 		if To_Uninstall 141 # ADS-B Feeder
 		then
-			G_EXEC_NOHALT=1 G_EXEC_OUTPUT=1 G_EXEC /opt/adsb/docker-compose-adsb down
-			Remove_Service adsb-docker
-			Remove_Service adsb-feeder-update
-			Remove_Service adsb-setup
-			[[ -f /opt/adsb/pre-uninstall-cleanup ]] && G_EXEC /opt/adsb/pre-uninstall-cleanup
-			G_EXEC rm -Rf /opt/adsb /mnt/dietpi_userdata/adsb-feeder /opt/adsb-feeder-update
+			Uninstall_Snippet 141
 		fi
 
 		if To_Uninstall 2 # Folding@Home
@@ -13681,29 +13581,12 @@ _EOF_
 
 		if To_Uninstall 134 # Docker Compose
 		then
-			G_AGP docker-compose-plugin
-			[[ -f '/usr/local/bin/docker-compose' ]] && G_EXEC rm /usr/local/bin/docker-compose # Pre-v8.14
-			command -v docker-compose > /dev/null && command -v pip3 > /dev/null && G_EXEC_OUTPUT=1 G_EXEC pip3 uninstall -y docker-compose # Pre-v8.2
+			Uninstall_Snippet 134
 		fi
 
 		if To_Uninstall 162 # Docker
 		then
-			Remove_Service docker
-
-			# Packages, repo and key
-			G_AGP docker-ce docker-ce-cli docker.io
-			[[ -f '/etc/apt/sources.list.d/docker.list' ]] && G_EXEC rm /etc/apt/sources.list.d/docker.list
-			[[ -f '/etc/apt/trusted.gpg.d/dietpi-docker.gpg' ]] && G_EXEC rm /etc/apt/trusted.gpg.d/dietpi-docker.gpg
-
-			# DietPi data dir
-			[[ -d '/mnt/dietpi_userdata/docker-data' ]] && G_EXEC rm -R /mnt/dietpi_userdata/docker-data
-			# Default data dir
-			[[ -d '/var/lib/docker' ]] && G_EXEC rm -R /var/lib/docker
-			# Config dir
-			[[ -d '/etc/docker' ]] && G_EXEC rm -R /etc/docker
-
-			# Set Portainer as not installed
-			aSOFTWARE_INSTALL_STATE[185]=0
+			Uninstall_Snippet 162
 		fi
 
 		if To_Uninstall 164 # Nukkit
@@ -13939,7 +13822,7 @@ _EOF_
 
 		if To_Uninstall 17 # Git
 		then
-			G_AGP git
+			Uninstall_Snippet 17
 		fi
 
 		if To_Uninstall 5 # ALSA
@@ -14084,15 +13967,6 @@ _EOF_
 		if To_Uninstall 170 # UnRAR
 		then
 			G_AGP unrar
-		fi
-
-		if To_Uninstall 130 # Python 3
-		then
-			command -v pip3 > /dev/null && G_EXEC_OUTPUT=1 G_EXEC pip3 uninstall -y pip setuptools wheel
-			G_AGP python3-dev python3-pip # python3-pip: Pre-v6.32
-			[[ -f '/etc/pip.conf' ]] && G_EXEC rm /etc/pip.conf
-			[[ -f '/etc/pip-constraints.txt' ]] && G_EXEC rm /etc/pip-constraints.txt
-			G_EXEC rm -Rf /{root,home/*}/.cache/pip
 		fi
 
 		if To_Uninstall 188 # Go
