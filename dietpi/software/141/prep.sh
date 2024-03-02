@@ -47,7 +47,7 @@ then
     # next clone the feeder image and put the files in place, but don't complete running the install
     echo "clone the adsb-feeder-image repo and checkout SHA \"$G_ADSB_SHA\""
     G_EXEC_OUTPUT=1 G_EXEC git clone -b dietpi 'https://github.com/dirkhh/adsb-feeder-image.git' /tmp/adsb-feeder
-    cd /tmp/adsb-feeder
+    G_EXEC cd /tmp/adsb-feeder
     [[ $G_ADSB_SHA != "" ]] && git checkout "$G_ADSB_SHA"
 
     # remove the files that aren't needed for an app install on DietPi
