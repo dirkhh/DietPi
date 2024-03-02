@@ -47,6 +47,8 @@ EDITION=
 SUFFIX=
 ADD_DOS_PART=1
 SIGN_PASS=
+PREINST=()
+SIZE_INCREMENT=0
 while (( $# ))
 do
 	case $1 in
@@ -63,6 +65,8 @@ do
 		'-s') shift; SUFFIX=$1;;
 		'--no-dos-part') ADD_DOS_PART=0;;
 		'--sign') shift; SIGN_PASS=$1;;
+		'--preinst') shift; PREINST+=("$1");;
+		'--sizeincrement') shift; SIZE_INCREMENT=$1;;
 		*) G_DIETPI-NOTIFY 1 "Invalid input \"$1\", aborting..."; exit 1;;
 	esac
 	shift
@@ -181,6 +185,9 @@ case $PTTYPE in
 	*) G_DIETPI-NOTIFY 1 "Invalid partition table type \"$PTTYPE\" passed, aborting..."; exit 1;;
 esac
 
+# Make sure we add space that was requested on the command line
+((root_size+=$SIZE_INCREMENT))
+
 # Do not add trailing FAT partitions for VM, container and (Clonezilla) installer images, and if there is a boot FAT partition already
 [[ $HW_MODEL == 20 || $HW_MODEL == 75 || $ITYPE == 'Installer' ]] && ADD_DOS_PART=0
 [[ $boot_size -gt 0 && $boot_fstype == 'fat'* ]] && ADD_DOS_PART=0
@@ -241,7 +248,7 @@ G_EXIT_CUSTOM(){
 	findmnt -M "$FP_ORIGIN/rootfs" &> /dev/null && G_EXEC umount -R "$FP_ORIGIN/rootfs"
 	[[ -d $FP_ORIGIN/rootfs ]] && G_EXEC rmdir "$FP_ORIGIN/rootfs"
 	[[ $FP_LOOP ]] && losetup "$FP_LOOP" &> /dev/null && G_EXEC losetup -d "$FP_LOOP"
-	[[ -f $OUTPUT_IMG_NAME.img ]] && G_EXEC rm "$OUTPUT_IMG_NAME.img"
+	[[ $SKIP_ARCHIVE = 0 ]] && [[ -f $OUTPUT_IMG_NAME.img ]] && G_EXEC rm "$OUTPUT_IMG_NAME.img"
 }
 
 # Create image file
@@ -380,6 +387,7 @@ G_EXEC mount -o X-mount.mkdir -t tmpfs tmpfs rootfs/var/cache/apt
 G_EXEC mount -o X-mount.mkdir -t tmpfs tmpfs rootfs/var/lib/apt/lists
 G_EXEC mount -o X-mount.mkdir -t tmpfs tmpfs rootfs/var/log
 packages='apt,bash-completion,bzip2,ca-certificates,cron,curl,fdisk,gnupg,htop,iputils-ping,locales,nano,p7zip,parted,procps,psmisc,sudo,systemd-sysv,tzdata,udev,unzip,wget,whiptail,'
+[[ $HW_MODEL == 21 ]] && packages+='initramfs-tools,zstd,'
 [[ $HW_MODEL == 75 ]] && packages+='iproute2' || packages+='console-setup,dropbear,ethtool,fake-hwclock,ifupdown,isc-dhcp-client,kmod,rfkill,systemd-timesyncd,usbutils'
 #G_EXEC_POST_FUNC(){ [[ $exit_code == 0 ]] || cat rootfs/debootstrap/debootstrap.log; }
 G_EXEC_OUTPUT=1 G_EXEC mmdebstrap --skip=check/empty --variant=minbase --include="$packages" --arch="$parch" --keyring="$keyring" "$distro" ./rootfs "$repo"
@@ -395,6 +403,7 @@ cat << '_EOF_' > rootfs/etc/rc.local
 {
 infocmp "$TERM" > /dev/null 2>&1 || { echo "[ WARN ] Unsupported TERM=\"$TERM\", switching to TERM=\"dumb\""; export TERM=dumb; }
 echo '[ INFO ] Running DietPi-Installer...'
+cat /etc/rc.local
 _EOF_
 
 cat << _EOF_ >> rootfs/etc/rc.local
@@ -418,6 +427,16 @@ exit 0
 } > /dev/console 2>&1 < /dev/console
 _EOF_
 G_EXEC chmod +x rootfs/etc/rc.local
+
+cat << _EOF_ > rootfs/etc/dietpi-preinst-packages
+#!/bin/dash
+[ ${#PREINST[@]} != 0 ] || exit 0
+echo "[ INFO ] preinstalling ${PREINST[@]}"
+# Workaround for failing IPv4 network connectivity check as GitHub Actions runners do not receive external ICMP echo replies.
+sed -i 's/CONFIG_CHECK_CONNECTION_IP=.*/CONFIG_CHECK_CONNECTION_IP=127.0.0.1/' /boot/dietpi.txt
+G_DISTRO="$DISTRO" G_DISTRO_NAME="$distro" G_HW_ARCH="$G_HW_ARCH" G_HW_MODEL="${HW_MODEL%.*}" /bin/bash /boot/dietpi/dietpi-software preinstall "${PREINST[@]}" || poweroff
+_EOF_
+G_EXEC chmod +x rootfs/etc/dietpi-preinst-packages
 
 # Start container
 # - Bind mounts required to allow container reading its own drive info, /dev/disk for GRUB and probably other tools to detect UUIDs
@@ -444,6 +463,8 @@ G_EXEC losetup -d "$FP_LOOP"
 ##########################################
 # Do not pack and upload raw VM image if not explicitly requested
 [[ $VMTYPE && ! $VMTYPE =~ ^(raw|all)$ ]] && SKIP_ARCHIVE=1 || SKIP_ARCHIVE=0
+# if preinstalling things, we never want to waste the time on compressing the image
+[[ ${#PREINST[@]} != 0 ]] && SKIP_ARCHIVE=1
 export FP_ROOT_DEV CLONING_TOOL OUTPUT_IMG_NAME MOUNT_IT='Off' SKIP_ARCHIVE SKIP_FIRSTBOOT_RESIZE=1
 IMAGER_ARGS=("$OUTPUT_IMG_NAME.img")
 (( $ADD_DOS_PART )) && IMAGER_ARGS+=('--add-dos-part')

@@ -145,7 +145,7 @@ $(ps f -eo pid,user,tty,cmd | grep -i 'dietpi')" && continue
 			cd /tmp || G_DIETPI-NOTIFY 1 'Failed to navigate to /tmp'
 
 			# Purge working directory if existent
-			[[ ! -d $G_WORKING_DIR ]] || rm -R "$G_WORKING_DIR" || G_DIETPI-NOTIFY 1 "Failed to remove scripts working directory: $G_WORKING_DIR"
+			[[ ! -d $G_WORKING_DIR ]] || rm -Rf "$G_WORKING_DIR" || G_DIETPI-NOTIFY 1 "Failed to remove scripts working directory: $G_WORKING_DIR"
 
 		}
 		trap 'G_EXIT' EXIT
@@ -1567,6 +1567,8 @@ Press any key to continue...'
 	# shellcheck disable=SC2120
 	G_AGUP()
 	{
+		[[ $NO_AGUP == 1 ]] && return 0
+
 		G_CHECK_ROOT_USER 1
 
 		# Clean cache before every update, which can corrupt and gets fully rewritten anyway

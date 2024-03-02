@@ -8,10 +8,12 @@ __162_prep() {
     # APT package name
     # - RISC-V: Use "docker.io" from Debian repo as the official Docker repo does not support RISC-V yet: https://download.docker.com/linux/debian/dists/
     local package='docker.io'
+    # shellcheck disable=SC2154  # this file is sourced into dietpi-software
     if (( $G_HW_ARCH != 11 ))
     then
         # Detect distro
         local distro='debian'
+        # shellcheck disable=SC2154  # this file is sourced into dietpi-software
         (( $G_RASPBIAN )) && distro='raspbian'
 
         # APT key
@@ -20,6 +22,7 @@ __162_prep() {
         G_EXEC eval "curl -sSfL '$url' | gpg --dearmor -o /etc/apt/trusted.gpg.d/dietpi-docker.gpg --yes"
 
         # APT list
+        # shellcheck disable=SC2154  # this file is sourced into dietpi-software
         G_EXEC eval "echo 'deb https://download.docker.com/linux/$distro/ ${G_DISTRO_NAME/trixie/bookworm} stable' > /etc/apt/sources.list.d/docker.list"
         G_AGUP
 
