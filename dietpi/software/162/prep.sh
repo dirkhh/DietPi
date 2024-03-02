@@ -8,6 +8,7 @@ __162_prep() {
     # APT package name
     # - RISC-V: Use "docker.io" from Debian repo as the official Docker repo does not support RISC-V yet: https://download.docker.com/linux/debian/dists/
     local package='docker.io'
+    # shellcheck disable=SC2154  # this file is sourced into dietpi-software
     if (( $G_HW_ARCH != 11 ))
     then
         # Detect distro

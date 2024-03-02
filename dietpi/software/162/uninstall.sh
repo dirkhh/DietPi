@@ -7,7 +7,7 @@
 Remove_Service docker
 
 # Packages, repo and key
-G_AGP docker-ce docker-ce-cli docker-engine
+G_AGP docker-ce docker-ce-cli docker.io
 [[ -f '/etc/apt/sources.list.d/docker.list' ]] && G_EXEC rm /etc/apt/sources.list.d/docker.list
 [[ -f '/etc/apt/trusted.gpg.d/dietpi-docker.gpg' ]] && G_EXEC rm /etc/apt/trusted.gpg.d/dietpi-docker.gpg
 
@@ -19,4 +19,5 @@ G_AGP docker-ce docker-ce-cli docker-engine
 [[ -d '/etc/docker' ]] && G_EXEC rm -R /etc/docker
 
 # Set Portainer as not installed
+# shellcheck disable=SC2034  # this file is sourced into dietpi-software
 aSOFTWARE_INSTALL_STATE[185]=0
