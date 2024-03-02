@@ -2670,7 +2670,7 @@ _EOF_
 
 		Install_Snippet()
 		{
-			[ -d "/boot/dietpi/software/$1" ] || return
+			[[ -d "/boot/dietpi/software/$1" ]] || return
 			# run all the scripts that have not been run, yet, for this snippet
 			for script in prep hw-customize configure
 			do
@@ -2680,6 +2680,8 @@ _EOF_
 					source "/boot/dietpi/software/$1/$script.sh"
 					touch "/boot/dietpi/software/$1/$script.completed"
 				fi
+				# if we are doing only the pre-install, bail after the prep stage
+				[[ $G_DIETPI_PREINSTALL == 1 ]] && break
 			done
 			# mark this one as installed
 			aSOFTWARE_INSTALL_STATE[$1]=2
@@ -7667,13 +7669,15 @@ _EOF_
 
 		if To_Install 58 tailscaled # Tailscale
 		then
-			# APT key
-			G_EXEC curl -sSfL "https://pkgs.tailscale.com/stable/debian/$G_DISTRO_NAME.noarmor.gpg" -o /etc/apt/trusted.gpg.d/dietpi-tailscale.gpg
+			if [[ ! -f /etc/apt/trusted.gpg.d/dietpi-tailscale.gpg ]]
+			then
+				# APT key
+				G_EXEC curl -sSfL "https://pkgs.tailscale.com/stable/debian/$G_DISTRO_NAME.noarmor.gpg" -o /etc/apt/trusted.gpg.d/dietpi-tailscale.gpg
 
-			# APT list
-			G_EXEC eval "echo 'deb https://pkgs.tailscale.com/stable/debian $G_DISTRO_NAME main' > /etc/apt/sources.list.d/dietpi-tailscale.list"
-			G_AGUP
-
+				# APT list
+				G_EXEC eval "echo 'deb https://pkgs.tailscale.com/stable/debian $G_DISTRO_NAME main' > /etc/apt/sources.list.d/dietpi-tailscale.list"
+				G_AGUP
+			fi
 			# APT package
 			G_AGI tailscale
 
@@ -7841,15 +7845,17 @@ _EOF_
 
 		if To_Install 201 zerotier-one # ZeroTier
 		then
-			# APT key: Download from GitHub instead of https://download.zerotier.com/contact%40zerotier.com.gpg for enhanced protection against corrupted download server
-			local url='https://raw.githubusercontent.com/zerotier/ZeroTierOne/master/doc/contact%40zerotier.com.gpg'
-			G_CHECK_URL "$url"
-			G_EXEC eval "curl -sSfL '$url' | gpg --dearmor -o /etc/apt/trusted.gpg.d/dietpi-zerotier.gpg --yes"
+			if [[ ! -f /etc/apt/sources.list.d/dietpi-zerotier.list ]]
+			then
+				# APT key: Download from GitHub instead of https://download.zerotier.com/contact%40zerotier.com.gpg for enhanced protection against corrupted download server
+				local url='https://raw.githubusercontent.com/zerotier/ZeroTierOne/master/doc/contact%40zerotier.com.gpg'
+				G_CHECK_URL "$url"
+				G_EXEC eval "curl -sSfL '$url' | gpg --dearmor -o /etc/apt/trusted.gpg.d/dietpi-zerotier.gpg --yes"
 
-			# APT list
-			G_EXEC eval "echo 'deb https://download.zerotier.com/debian/${G_DISTRO_NAME/trixie/bookworm} ${G_DISTRO_NAME/trixie/bookworm} main' > /etc/apt/sources.list.d/dietpi-zerotier.list"
-			G_AGUP
-
+				# APT list
+				G_EXEC eval "echo 'deb https://download.zerotier.com/debian/${G_DISTRO_NAME/trixie/bookworm} ${G_DISTRO_NAME/trixie/bookworm} main' > /etc/apt/sources.list.d/dietpi-zerotier.list"
+				G_AGUP
+			fi
 			# APT package
 			G_AGI zerotier-one
 
@@ -14306,7 +14312,7 @@ _EOF_
 		[[ $G_SERVICE_CONTROL == 0 ]] || /boot/dietpi/dietpi-services stop
 
 		# Update package cache: Skip when flag was set by first run setup
-		(( $SKIP_APT_UPDATE )) || G_AGUP
+		[[ $SKIP_APT_UPDATE == 0 ]] && G_AGUP
 
 		# Install software
 		Install_Software
@@ -14403,6 +14409,8 @@ _EOF_
 		G_NOTIFY_3_MODE='Step'
 
 		G_DIETPI-NOTIFY 3 "$G_PROGRAM_NAME" 'Applying initial first run setup steps'
+		# this gets called right after dietpi-update - no need to run apt update again
+		export SKIP_APT_UPDATE=1
 
 		# Get settings
 		AUTOINSTALL_ENABLED=$(grep -cm1 '^[[:blank:]]*AUTO_SETUP_AUTOMATED=1' /boot/dietpi.txt)
@@ -14503,7 +14511,8 @@ _EOF_
 		Check_Net_and_Time_sync
 
 		# Full package upgrade on first run installs: https://github.com/MichaIng/DietPi/issues/3098
-		if [[ ! -f '/boot/dietpi/.skip_distro_upgrade' ]]
+		# we don't want this for the adsb.im feeder image, but of course you can't put a dot-file on an MSDOS partition...
+		if [[ ! -f '/boot/dietpi/.skip_distro_upgrade' && ! -f '/boot/dietpi/ADSB-README.txt' ]]
 		then
 			G_AGUP
 			G_AGDUG
@@ -14650,7 +14659,7 @@ _EOF_
 		# RPi 4/5 EEPROM update: https://github.com/MichaIng/DietPi/issues/3217
 		elif [[ $G_HW_MODEL == [45] ]]
 		then
-			/boot/dietpi/func/dietpi-set_hardware rpi-eeprom
+			/boot/dietpi/func/dietpi-set_hardware -no-agup rpi-eeprom
 		fi
 
 		# Install GPU driver if set
@@ -14782,7 +14791,7 @@ _EOF_
 	Input_Modes()
 	{
 		# Process software and exit
-		if [[ $1 == 'install' || $1 == 'reinstall' || $1 == 'uninstall' ]]; then
+		if [[ $1 == 'install' || $1 == 'preinstall' || $1 == 'reinstall' || $1 == 'uninstall' ]]; then
 
 			G_DIETPI-NOTIFY 3 "$G_PROGRAM_NAME" "Automated $1"
 
@@ -14791,6 +14800,12 @@ _EOF_
 
 			# Process software IDs
 			local command=$1
+			if [[ $command == 'preinstall' ]]
+			then
+				command='install'
+				G_DIETPI_PREINSTALL=1
+			fi
+
 			shift
 			for i in "$@"
 			do
@@ -15581,7 +15596,7 @@ List of installed software and their online documentation URLs:
 	Read_InstallFileList
 	#-------------------------------------------------------------------------------------
 	# CLI input mode: Force menu mode on first run
-	if [[ $1 && $G_DIETPI_INSTALL_STAGE == 2 ]]
+	if [[ $1 == 'preinstall' || $1 && $G_DIETPI_INSTALL_STAGE == 2 ]]
 	then
 		Input_Modes "$@"
 
@@ -15607,6 +15622,9 @@ List of installed software and their online documentation URLs:
 
 	# Start software installs
 	Run_Installations
+
+	# if this is just a preinstall we are done here
+	[[ $G_DIETPI_PREINSTALL ]] && exit 0
 
 	# DietPi-Automation post install steps
 	(( $G_DIETPI_INSTALL_STAGE == 2 )) || DietPi-Automation_Post

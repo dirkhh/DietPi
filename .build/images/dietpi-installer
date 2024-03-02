@@ -1513,6 +1513,8 @@ _EOF_
 
 		G_AGI "${aPACKAGES_REQUIRED_INSTALL[@]}"
 		unset -v aPACKAGES_REQUIRED_INSTALL
+		# finally add the preinstalled packages
+		dash /etc/dietpi-preinst-packages
 
 		G_AGA
 

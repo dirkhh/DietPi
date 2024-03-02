@@ -38,6 +38,13 @@ $FP_SCRIPT	qemu-guest-agent|qga	enable/disable
 "	#////////////////////////////////////
 
 	# Grab Inputs
+	NO_AGUP=0
+	if [[ "$1" == "-no-agup" ]]
+	then
+		NO_AGUP=1
+		shift
+	fi
+	export NO_AGUP
 	INPUT_DEVICE_NAME=${1,,}
 	INPUT_DEVICE_VALUE=${2,,}
 	# - Support for 1/0 inputs to enable/disable.
