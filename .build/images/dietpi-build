@@ -472,7 +472,7 @@ cat << _EOF_ > rootfs/etc/dietpi-preinst-packages
 echo "[ INFO ] preinstalling ${PREINST[@]}"
 # Workaround for failing IPv4 network connectivity check as GitHub Actions runners do not receive external ICMP echo replies.
 sed -i 's/CONFIG_CHECK_CONNECTION_IP=.*/CONFIG_CHECK_CONNECTION_IP=127.0.0.1/' /boot/dietpi.txt
-G_DISTRO="$DISTRO" G_DISTRO_NAME="$distro" G_HW_ARCH="$G_HW_ARCH" G_HW_MODEL="${HW_MODEL%.*}" /bin/bash /boot/dietpi/dietpi-software preinstall "${PREINST[@]}" || poweroff
+G_DISTRO="$DISTRO" G_DISTRO_NAME="$distro" G_HW_ARCH="$G_HW_ARCH" G_HW_MODEL="${HW_MODEL%.*}" G_ADSB_SHA="${G_ADSB_SHA}" /bin/bash /boot/dietpi/dietpi-software preinstall "${PREINST[@]}" || poweroff
 _EOF_
 G_EXEC chmod +x rootfs/etc/dietpi-preinst-packages
 
