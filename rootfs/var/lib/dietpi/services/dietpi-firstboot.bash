@@ -278,8 +278,7 @@ _EOF_
 		local static_dns=$(sed -n '/^[[:blank:]]*AUTO_SETUP_NET_STATIC_DNS=/{s/^[^=]*=//p;q}' /boot/dietpi.txt)
 
 		# - WiFi
-		if (( $wifi_enabled )); then
-
+		if false; then # this is nuts... (( $wifi_enabled )); then
 			# Enable WiFi, disable Ethernet
 			ethernet_enabled=0
 			sed --follow-symlinks -Ei "/(allow-hotplug|auto)[[:blank:]]+wlan/c\allow-hotplug $iface_wlan" /etc/network/interfaces
@@ -292,7 +291,7 @@ _EOF_
 			/boot/dietpi/func/dietpi-set_hardware wificountrycode
 
 		# - Ethernet
-		elif (( $ethernet_enabled )); then
+		elif false; then  # nope, not doing that either (( $ethernet_enabled )); then
 
 			# Enable Ethernet, disable WiFi
 			wifi_enabled=0
@@ -304,6 +303,17 @@ _EOF_
 
 			# RPi: Keep onboard WiFi enabled until end of first run installs: https://github.com/MichaIng/DietPi/issues/5391
 			(( $G_HW_MODEL > 9 )) || /boot/dietpi/func/dietpi-set_hardware wifimodules onboard_enable
+		else
+			# since we want a reasonably generic image, this MUST be able to work on either ethernet or wifi
+			# there is absolutely no excuse for preventing that
+			sed --follow-symlinks -Ei "/(allow-hotplug|auto)[[:blank:]]+wlan/c\allow-hotplug $iface_wlan" /etc/network/interfaces
+			sed --follow-symlinks -Ei "/(allow-hotplug|auto)[[:blank:]]+eth/c\allow-hotplug $iface_eth" /etc/network/interfaces
+			ethernet_enabled=1
+			wifi_enabled=1
+			# Apply global SSID/keys from dietpi.txt to wpa_supplicant
+			/boot/dietpi/func/dietpi-wifidb 1
+			# Set WiFi country code
+			/boot/dietpi/func/dietpi-set_hardware wificountrycode
 
 		fi
 
@@ -313,8 +323,8 @@ _EOF_
 			if (( $wifi_enabled )); then
 
 				sed --follow-symlinks -i "/iface wlan/c\iface $iface_wlan inet static" /etc/network/interfaces
-
-			elif (( $ethernet_enabled )); then
+			fi
+			if (( $ethernet_enabled )); then
 
 				sed --follow-symlinks -i "/iface eth/c\iface $iface_eth inet static" /etc/network/interfaces
 
@@ -342,7 +352,8 @@ _EOF_
 		# - Configure enabled interfaces now, /etc/network/interfaces will be effective from next boot on
 		#	Failsafe: Bring up Ethernet, whenever WiFi is disabled or fails to be configured, e.g. due to wrong credentials
 		# shellcheck disable=SC2015
-		(( $wifi_enabled )) && ifup "$iface_wlan" || ifup "$iface_eth"
+		(( $wifi_enabled )) && ifup "$iface_wlan"
+		(( $ethernet_enabled )) && ifup "$iface_eth"
 
 		# - Boot wait for network
 		/boot/dietpi/func/dietpi-set_software boot_wait_for_network "$(( ! $(grep -cm1 '^[[:blank:]]*AUTO_SETUP_BOOT_WAIT_FOR_NETWORK=0' /boot/dietpi.txt) ))"
