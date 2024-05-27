@@ -187,6 +187,10 @@ Please login again as user "root" with password "dietpi", respectively the one y
 			# - Always remove PID file when script is exited/terminated/killed
 			trap '[[ -f $FP_DIETPI_FIRSTRUNSETUP_PID ]] && rm $FP_DIETPI_FIRSTRUNSETUP_PID' EXIT
 
+			# if we have a "waiting app", run it
+			if [[ -f /opt/adsb/adsb-setup/waiting-app.py ]] ; then
+				python3 /opt/adsb/adsb-setup/waiting-app.py 80 "$FP_DIETPI_FIRSTRUNSETUP_LOG" "First boot of" &
+			fi
 			# 1st run dietpi-update
 			if (( $G_DIETPI_INSTALL_STAGE == 0 )); then
 
