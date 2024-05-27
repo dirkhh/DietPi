@@ -193,7 +193,7 @@ Please login again as user "root" with password "dietpi", respectively the one y
 				FP_WAITING_APP_PID=$!
 				echo "$FP_WAITING_APP_PID" > /opt/adsb/adsb-setup/waiting-app.pid
 				# replace the trap - trying to make it kill the app on exit
-				trap 'kill $FP_WAITING_APP_PID ; [[ -f $FP_DIETPI_FIRSTRUNSETUP_PID ]] && rm $FP_DIETPI_FIRSTRUNSETUP_PID' EXIT
+				trap 'echo "restart : adsb-setup" >> "$FP_DIETPI_FIRSTRUNSETUP_LOG" ; sleep 1 ; kill $FP_WAITING_APP_PID ; [[ -f $FP_DIETPI_FIRSTRUNSETUP_PID ]] && rm $FP_DIETPI_FIRSTRUNSETUP_PID' EXIT
 			fi
 			# 1st run dietpi-update
 			if (( $G_DIETPI_INSTALL_STAGE == 0 )); then
