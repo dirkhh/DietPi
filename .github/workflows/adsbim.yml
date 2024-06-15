@@ -1,0 +1,97 @@
+name: build images
+
+on:
+  push:
+    branches:
+      - "adsbim"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout Project Repository
+      uses: actions/checkout@v4
+      with:
+        show-progress: false
+    - name: tag current version as latest (regardless of other tags)
+      uses: rickstaa/action-create-tag@v1
+      with:
+        tag: "latest"
+        tag_exists_error: false
+        force_push_tag: true
+        message: "latest commit"
+
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [nanopi-neo3-dietpi, orangepi-3lts-dietpi, orangepi-5plus-dietpi, orangepi-zero3-dietpi, raspberrypi64-dietpi-pi-2-3-4, raspberrypi64-dietpi-pi-5, x86-64-native, x86-64-vm]
+        include:
+        - name: nanopi-neo3-dietpi
+          dietpi_machine: 56
+        - name: orangepi-3LTS-dietpi
+          dietpi_machine: 89
+        - name: orangepi-5plus-dietpi
+          dietpi_machine: 82
+        - name: orangepi-zero3-dietpi
+          dietpi_machine: 83
+        - name: raspberrypi64-dietpi-pi-2-3-4
+          dietpi_machine: 4
+        - name: raspberrypi64-dietpi-pi-5
+          dietpi_machine: 5
+        - name: x86-64-native
+          dietpi_machine: 21
+        - name: x86-64-vm
+          dietpi_machine: 20
+
+    env:
+      IMG_NAME: ${{ matrix.name }}
+      DIETPI_MACHINE: ${{ matrix.dietpi_machine }}
+
+    steps:
+    - name: Checkout Project Repository again with the new tag - and make sure we have the full history for the version code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        show-progress: false
+        path: repository
+    - name: wait for tag
+      run: |
+        cd repository
+        while true
+        do
+          if [[ $(git describe) == "latest" ]] ; then
+            break
+          fi
+        git fetch --tags --force
+        done
+
+    - name: Install Dependencies
+      run: |
+        sudo apt update
+        sudo apt-get install -y coreutils p7zip-full qemu-user-static qemu-utils lz4
+
+    - name: Build DietPi Image
+      run: |
+        mkdir -p uploads
+        cd repository/.build/images
+        sudo G_GITOWNER=dirkhh G_GITBRANCH=adsbim G_ADSB_SHA=${{ github.sha }} ./dietpi-build -m ${{ env.DIETPI_MACHINE }} -o dirkhh -b adsbim --preinst 141 --sizeincrement 600
+        mv DietPi*.img ../../../uploads
+
+    - name: Compress img
+      id: compress
+      run: |
+        cd uploads
+        export IMAGE=$(ls DietPi*.img)
+        echo "simply compress ${IMAGE}"
+        sudo xz -z -1 -T0 "${IMAGE}"
+        echo "image=${IMAGE}.xz" >> $GITHUB_OUTPUT
+        ls -lh .
+
+    - name: Upload to GitHub as release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: latest
+        files: uploads/*
+
