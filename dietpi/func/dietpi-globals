@@ -1209,7 +1209,8 @@ Press any key to continue...'
 		}
 		# Run check with given timeout and retries
 		G_EXEC_RETRIES=$retries
-		G_EXEC_DESC='Checking IPv6 network connectivity' G_EXEC ping -6nc 1 -W "$timeout" 'IP'
+		# Don't run IPv6 tests
+		#G_EXEC_DESC='Checking IPv6 network connectivity' G_EXEC ping -6nc 1 -W "$timeout" 'IP'
 
 		### Check DNS resolver ###
 		# Add special options to the error handler menu
