@@ -7680,6 +7680,11 @@ _EOF_
 			fi
 			# APT package
 			G_AGI tailscale
+			# Disable telemetry for tailscale
+			# but only if it's not already there
+			if ! grep -q -- "^FLAGS=\"--no-logs-no-support" /etc/default/tailscaled ; then
+			       sed -i 's/FLAGS=\"/FLAGS=\"--no-logs-no-support /' /etc/default/tailscaled
+			fi
 
 			Enable_IP_forwarding tailscale
 		fi
