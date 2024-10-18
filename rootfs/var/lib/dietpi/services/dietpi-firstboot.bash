@@ -352,8 +352,9 @@ _EOF_
 		# - Configure enabled interfaces now, /etc/network/interfaces will be effective from next boot on
 		#	Failsafe: Bring up Ethernet, whenever WiFi is disabled or fails to be configured, e.g. due to wrong credentials
 		# shellcheck disable=SC2015
-		(( $wifi_enabled )) && ifup "$iface_wlan"
-		(( $ethernet_enabled )) && ifup "$iface_eth"
+		# adsb.im: calling ifup here is unnecessary, once dietpi-firstboot.service is done, networking.service will bring up the configured interfaces
+		#(( $wifi_enabled )) && ifup "$iface_wlan"
+		#(( $ethernet_enabled )) && ifup "$iface_eth"
 
 		# - Boot wait for network
 		/boot/dietpi/func/dietpi-set_software boot_wait_for_network "$(( ! $(grep -cm1 '^[[:blank:]]*AUTO_SETUP_BOOT_WAIT_FOR_NETWORK=0' /boot/dietpi.txt) ))"
