@@ -22,7 +22,6 @@ jobs:
         message: "latest commit"
 
   build:
-    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -30,21 +29,29 @@ jobs:
         include:
         - name: nanopi-neo3-dietpi
           dietpi_machine: 56
+          runner: ubuntu-24.04-arm
         - name: orangepi-3LTS-dietpi
           dietpi_machine: 89
+          runner: ubuntu-24.04-arm
         - name: orangepi-5plus-dietpi
           dietpi_machine: 82
+          runner: ubuntu-24.04-arm
         - name: orangepi-zero3-dietpi
           dietpi_machine: 83
+          runner: ubuntu-24.04-arm
         - name: raspberrypi64-dietpi-pi-2-3-4
           dietpi_machine: 4
+          runner: ubuntu-24.04-arm
         - name: raspberrypi64-dietpi-pi-5
           dietpi_machine: 5
+          runner: ubuntu-24.04-arm
         - name: x86-64-native
           dietpi_machine: 21
+          runner: ubuntu-latest
         - name: x86-64-vm
           dietpi_machine: 20
-
+          runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     env:
       IMG_NAME: ${{ matrix.name }}
       DIETPI_MACHINE: ${{ matrix.dietpi_machine }}
