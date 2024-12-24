@@ -12004,6 +12004,7 @@ _EOF_
 			[[ -d '/opt/adsb' ]] && G_EXEC rm -R /opt/adsb
 			G_EXEC mv /tmp/adsb-feeder/src/modules/adsb-feeder/filesystem/root/opt/adsb /opt/
 			G_EXEC cd /opt/adsb
+			G_EXEC mv /tmp/adsb-feeder/src/tools/app-install.sh /opt/adsb/app-install.sh
 
 			# remove the git clone of the repo we installed from
 			G_EXEC rm -R /tmp/adsb-feeder
@@ -12020,6 +12021,9 @@ _EOF_
 
 			# get the Python modules
 			G_EXEC_OUTPUT=1 G_EXEC pip3 install -U flask requests
+
+			# allow the app-install script from adsb.im to make any finishing touches that are needed
+			G_EXEC_OUTPUT=1 G_EXEC bash /opt/adsb/app-install.sh -f
 
 			# finally ensure that /run allows executables (this is needed for the containers to be able to not do excessive
 			# writes to physical storage - which might be an SD card)
